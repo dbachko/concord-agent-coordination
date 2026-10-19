@@ -988,6 +988,59 @@ function Approval({ owner, proposal }: { owner: Owner; proposal: Proposal }) {
   );
 }
 
+function AgentNegotiation({ view }: { view: View }) {
+  const agreement = view.agreement;
+  if (!agreement) return null;
+  const all = view.events
+    .filter((event) => event.agreementId === agreement.id)
+    .sort((a, b) => a.sequence - b.sequence);
+  const start = all.findLastIndex(
+    (event) => event.type === "agent_negotiation_started",
+  );
+  const steps = all
+    .slice(Math.max(0, start))
+    .filter((event) =>
+      [
+        "agent_offer",
+        "agent_rejected",
+        "agent_counteroffer",
+        "agent_consensus",
+      ].includes(event.type),
+    );
+  if (!steps.length) return null;
+  return (
+    <section className="agent-negotiation" aria-label="Agent negotiation">
+      <div className="agent-negotiation-heading">
+        <h3>Agent negotiation</h3>
+        <span>Policy agents</span>
+      </div>
+      <ol>
+        {steps.map((event) => (
+          <li key={event.id} className={event.type}>
+            {event.type === "agent_rejected" ? (
+              <XCircle size={15} />
+            ) : event.type === "agent_consensus" ? (
+              <CheckCheck size={15} />
+            ) : (
+              <ArrowRight size={15} />
+            )}
+            <div>
+              <strong>
+                {event.type === "agent_consensus" ? "Both agents" : event.actor}
+              </strong>
+              <p>
+                {event.type === "agent_consensus"
+                  ? "Policy checks passed · owners decide next"
+                  : event.title}
+              </p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 function SharedPlan({
   view,
   activeCount,
@@ -1041,6 +1094,7 @@ function SharedPlan({
               {statusText[a.status]}
             </span>
           </div>
+          <AgentNegotiation view={view} />
           {!valid ? (
             <div className="inactive-plan">
               <p>{a.reason ?? "This proposal is no longer active."}</p>

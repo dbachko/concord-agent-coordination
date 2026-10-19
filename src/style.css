@@ -2978,3 +2978,56 @@ nav {
     font-size: 10px;
   }
 }
+
+.agent-negotiation {
+  margin: 14px 0 18px;
+}
+.agent-negotiation-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.agent-negotiation-heading h3 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0;
+}
+.agent-negotiation-heading > span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.agent-negotiation ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.agent-negotiation li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 0;
+}
+.agent-negotiation li > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.agent-negotiation strong {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.agent-negotiation p {
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 2px 0 0;
+  color: var(--ink);
+}
+.agent-negotiation .agent_rejected > svg {
+  color: #9c493f;
+}
+.agent-negotiation .agent_consensus > svg {
+  color: #456944;
+}

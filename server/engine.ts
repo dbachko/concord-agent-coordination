@@ -639,6 +639,14 @@ export class Engine {
   negotiate(a: Agreement) {
     a.status = "negotiating";
     delete a.reason;
+    this.emit(
+      "agent_negotiation_started",
+      "Agents checking selected needs",
+      "Deterministic policy agents; no owner approval inferred.",
+      "Concord",
+      "shared",
+      a.id,
+    );
     const reqs = OWNERS.map((o) =>
       this.state.requests.find((r) => r.id === a.requestIds[o])!,
     );
@@ -716,21 +724,33 @@ export class Engine {
         "No common two-hour window remains after private scheduling constraints.",
       );
     const total = provider.totalCents;
-    const proportional = Math.round(
-      (total * alice.need.gpuCount * alice.need.runtimeMinutes) /
-        (alice.need.gpuCount * alice.need.runtimeMinutes +
-          bob.need.gpuCount * bob.need.runtimeMinutes),
-    );
-    // Only two public allocation policies. No extraction or disclosure of private reservation prices.
-    const allocations = [Math.floor(total / 2), proportional].filter(
-      (x, i, xs) => xs.indexOf(x) === i,
-    );
-    for (const [i, share] of allocations.entries()) {
+    const agents = {
+      alice: new OwnerAgent(this.state, "alice", this.now()),
+      bob: new OwnerAgent(this.state, "bob", this.now()),
+    };
+    const publicNeeds = { alice: alice.need, bob: bob.need };
+    const seen = new Set<number>();
+    const policies = [
+      { proposer: "bob", policy: "equal" },
+      { proposer: "alice", policy: "usage" },
+    ] as const;
+    for (const [i, { proposer, policy }] of policies.entries()) {
+      const shares = agents[proposer].proposeShares(total, publicNeeds, policy);
+      if (seen.has(shares.alice)) continue;
+      seen.add(shares.alice);
+      this.emit(
+        i ? "agent_counteroffer" : "agent_offer",
+        `${i ? "Counters by usage" : "Proposes equal split"} · Alice $${(shares.alice / 100).toFixed(2)} / Bob $${(shares.bob / 100).toFixed(2)}`,
+        "Structured offer generated from selected public requirements. Private limits are withheld.",
+        `${names[proposer]}’s agent`,
+        "shared",
+        a.id,
+      );
       const offer: Offer = {
         start,
         end: start + provider.duration,
         totalCents: total,
-        shares: { alice: share, bob: total - share },
+        shares,
         capacity: provider.capacity,
         provider: provider.name,
         providerMode: provider.mode,
@@ -744,6 +764,22 @@ export class Engine {
         },
         ...(provider.sourceUrl ? { providerSource: provider.sourceUrl } : {}),
       };
+      const decisions = OWNERS.map((owner) => ({
+        owner,
+        ...agents[owner].evaluate(offer, owner === "alice" ? alice : bob),
+      }));
+      for (const decision of decisions.filter(
+        (decision) => !decision.accepted,
+      )) {
+        this.emit(
+          "agent_rejected",
+          "Rejects: private constraints",
+          "The proposed terms failed this agent's private policy checks. Limits are withheld.",
+          `${names[decision.owner]}’s agent`,
+          "shared",
+          a.id,
+        );
+      }
       const result = this.validate(a, offer);
       if (!result.ok) {
         this.emit(
@@ -756,6 +792,14 @@ export class Engine {
         );
         continue;
       }
+      this.emit(
+        "agent_consensus",
+        "Both agents accept these terms",
+        "All feasibility and private policy checks passed. Owner approval is still required.",
+        "Concord",
+        "shared",
+        a.id,
+      );
       this.emit(
         "counterproposal",
         i

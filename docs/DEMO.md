@@ -9,8 +9,9 @@ Main: http://127.0.0.1:4317. Isolated tests: port 4318. Both currently use mock 
 3. The real local service emits one opportunity: “This might interest you. Would you like to check it?” Dot receives its actual ID and relevance reason through the local relay. No savings claim is shown.
 4. User chooses explore, dismiss or pause through dot. Explore creates Alice's selected request and returns an actual negotiation decision.
 5. Dot presents the proposal and feasible time alternatives. The mock fixture rejects a $6/$6 equal split and proposes $4/$8 by GPU-minutes. These are invented planning figures, not prices or savings.
-6. A user can counter with a later time or different feasible cost split. This creates a new exact version and clears earlier consent. Both owners then choose whether to continue exploring it.
-7. Only after both exploration responses does each receive a separate final-agreement question. Both exact-version final approvals produce “Agreement reached, awaiting booking authorization.” Nothing is booked.
+6. The visible **Agent negotiation** section records Bob’s equal-split proposal, Alice’s private-policy rejection, Alice’s usage-based counteroffer, and both agents’ policy consensus. These are deterministic policy-agent events, not generated conversation. They occur before owner exploration and final approval.
+7. A user can counter with a later time or different feasible cost split. This creates a new exact version and clears earlier consent. Both owners then choose whether to continue exploring it.
+8. Only after both exploration responses does each receive a separate final-agreement question. Both exact-version final approvals produce “Agreement reached, awaiting booking authorization.” Nothing is booked.
 
 See DOT-RELAY.md for strict input schemas and commands. The parent dot task acts as the actual transport by delegating these local commands and reporting returned JSON. A local UI test alone is not proof of the main conversation's completed user-response loop.
 

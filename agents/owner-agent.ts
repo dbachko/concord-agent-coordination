@@ -1,4 +1,10 @@
-import type { State, Owner, Offer, Request } from "../server/types.js";
+import type {
+  State,
+  Owner,
+  Offer,
+  Request,
+  PublicNeed,
+} from "../server/types.js";
 /** A deterministic owner agent. Its private store never enters a peer's serialized view. */
 export class OwnerAgent {
   constructor(
@@ -6,6 +12,19 @@ export class OwnerAgent {
     readonly owner: Owner,
     private now: Date = new Date(),
   ) {}
+  proposeShares(
+    totalCents: number,
+    needs: Record<Owner, PublicNeed>,
+    policy: "equal" | "usage",
+  ): Record<Owner, number> {
+    const aliceUnits = needs.alice.gpuCount * needs.alice.runtimeMinutes;
+    const bobUnits = needs.bob.gpuCount * needs.bob.runtimeMinutes;
+    const aliceShare =
+      policy === "equal"
+        ? Math.floor(totalCents / 2)
+        : Math.round((totalCents * aliceUnits) / (aliceUnits + bobUnits));
+    return { alice: aliceShare, bob: totalCents - aliceShare };
+  }
   evaluate(
     offer: Offer,
     request: Request,

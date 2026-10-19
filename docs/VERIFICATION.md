@@ -2,7 +2,7 @@
 
 Release checks on 2026-10-19:
 
-- 59 automated tests across five files passed: domain, HTTP API, privacy, lifecycle, GPU constraints, decisions and opportunity watches.
+- 62 automated tests across six files passed: domain, HTTP API, privacy, lifecycle, GPU constraints, decisions and opportunity watches.
 - TypeScript and production build passed. Formatting passed.
 - A clean source copy without credentials, private state or installed dependencies passed `npm ci`, build, startup and HTTP checks. Default live calls were disabled.
 - Isolated HTTP smoke passed: match, infeasible equal split, feasible counterproposal, both exploration responses, dual final approval, constraint change, new-version consent and withdrawal.
@@ -17,3 +17,5 @@ Parallel's live adapter is implemented. No successful Parallel Search API call i
 Default research and workload modes remain explicit fixtures. The provider envelope, price, availability, permission for separate users and isolation are synthetic or unverified. Live errors never silently switch to fixtures. Use the verification commands to record fresh evidence in your own environment.
 
 No host rental, payment, code deployment or third-party message is implemented. Public source publication does not deploy the service.
+
+The compact agent-negotiation view uses actual offer, private-policy rejection, counteroffer and consensus events. Additional tests verify no fabricated rejection/counter when the first offer passes, no consensus when both permitted policies fail, and no automatic owner approval. Isolated HTTP verification confirmed the four-event $6/$6 → rejection → $4/$8 → policy-consensus path. The recording worker owns the visual pickup; no new browser inspection is claimed here.
