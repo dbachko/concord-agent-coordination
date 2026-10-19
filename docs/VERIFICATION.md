@@ -2,7 +2,7 @@
 
 Release checks on 2026-10-19:
 
-- 62 automated tests across six files passed: domain, HTTP API, privacy, lifecycle, GPU constraints, decisions and opportunity watches.
+- 70 automated tests across seven files passed: domain, HTTP API, privacy, lifecycle, GPU constraints, decisions and opportunity watches.
 - TypeScript and production build passed. Formatting passed.
 - A clean source copy without credentials, private state or installed dependencies passed `npm ci`, build, startup and HTTP checks. Default live calls were disabled.
 - Isolated HTTP smoke passed: match, infeasible equal split, feasible counterproposal, both exploration responses, dual final approval, constraint change, new-version consent and withdrawal.
@@ -18,4 +18,6 @@ Default research and workload modes remain explicit fixtures. The provider envel
 
 No host rental, payment, code deployment or third-party message is implemented. Public source publication does not deploy the service.
 
-The compact agent-negotiation view uses actual offer, private-policy rejection, counteroffer and consensus events. Additional tests verify no fabricated rejection/counter when the first offer passes, no consensus when both permitted policies fail, and no automatic owner approval. Isolated HTTP verification confirmed the four-event $6/$6 → rejection → $4/$8 → policy-consensus path. The recording worker owns the visual pickup; no new browser inspection is claimed here.
+The compact agent-negotiation view uses actual offer, private-policy rejection, counteroffer and consensus events. Additional tests verify no fabricated rejection/counter when the first offer passes, no consensus when both permitted policies fail, and no automatic owner approval. Isolated HTTP verification confirmed the four-event $6/$6 → rejection → $4/$8 → policy-consensus path. The completed recording uses the earlier real Activity events; it was not replaced by this update.
+
+Streaming validation covers actual HTTP event delivery, step-by-step execution, reconnect cursors, UUID deduplication, stale-step rejection, owner-private event and budget redaction, terminal completion/errors, cancellation, expiry, reset and fresh evidence checks after a pause. A browser pass verified real offer → rejection → counteroffer → acceptance → consensus arrival and owner-review gating. Desktop and phone layouts were checked, including Bob's session. No artificial execution delays or transcript replay are used. Screenshots remain in ignored `output/streaming/`.

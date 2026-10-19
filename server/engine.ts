@@ -1,3 +1,4 @@
+import { Execution, type ExecutionStep } from "./execution.js";
 import { OwnerAgent } from "../agents/owner-agent.js";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -79,6 +80,57 @@ export function freshState(): State {
 }
 
 export class Engine {
+  private listeners = new Set<(event?: Event) => void>();
+  readonly execution = new Execution(
+    () => this.notify(),
+    (id) => {
+      const agreement = this.state.agreements.find((a) => a.id === id);
+      return Boolean(
+        agreement &&
+        !["cancelled", "expired", "rejected"].includes(agreement.status) &&
+        OWNERS.every((owner) => {
+          const request = this.state.requests.find(
+            (r) => r.id === agreement.requestIds[owner],
+          );
+          return request?.status === "active" && request.expiresAt > this.at();
+        }),
+      );
+    },
+    (id) => {
+      const agreement = this.state.agreements.find((a) => a.id === id);
+      if (agreement) {
+        this.fail(
+          agreement,
+          "A policy operation could not complete. No agreement was approved.",
+        );
+        this.emit(
+          "agent_run_failed",
+          "Policy execution stopped",
+          "No private error details are shared. Review the selected need before retrying.",
+          "Concord",
+          "shared",
+          id,
+        );
+      }
+    },
+    (id) =>
+      this.state.agreements.find((a) => a.id === id)?.status ===
+      "awaiting_response",
+  );
+  subscribe(listener: (event?: Event) => void) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+  private notify(event?: Event) {
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch {
+        this.listeners.delete(listener);
+      }
+    }
+  }
+
   constructor(
     public state: State = freshState(),
     public now: () => Date = () => new Date(),
@@ -106,6 +158,7 @@ export class Engine {
       scope,
       agreementId,
     });
+    this.notify(this.state.events.at(-1)!);
   }
   active(owner: Owner) {
     return this.state.requests.find(
@@ -637,6 +690,16 @@ export class Engine {
     return { ok: true, code: "VALID" };
   }
   negotiate(a: Agreement) {
+    const iterator = this.negotiationSteps(a);
+    if (this.execution.enabled) this.execution.start(a.id, iterator);
+    else
+      for (const _step of iterator) {
+        /* Synchronous domain use drains the same actual operations. */
+      }
+  }
+  private *negotiationSteps(
+    a: Agreement,
+  ): Generator<ExecutionStep, void, unknown> {
     a.status = "negotiating";
     delete a.reason;
     this.emit(
@@ -647,6 +710,10 @@ export class Engine {
       "shared",
       a.id,
     );
+    yield {
+      actor: "Concord",
+      label: "Check compatibility and prepare first offer",
+    };
     const reqs = OWNERS.map((o) =>
       this.state.requests.find((r) => r.id === a.requestIds[o])!,
     );
@@ -764,21 +831,46 @@ export class Engine {
         },
         ...(provider.sourceUrl ? { providerSource: provider.sourceUrl } : {}),
       };
-      const decisions = OWNERS.map((owner) => ({
-        owner,
-        ...agents[owner].evaluate(offer, owner === "alice" ? alice : bob),
-      }));
-      for (const decision of decisions.filter(
-        (decision) => !decision.accepted,
-      )) {
-        this.emit(
-          "agent_rejected",
-          "Rejects: private constraints",
-          "The proposed terms failed this agent's private policy checks. Limits are withheld.",
-          `${names[decision.owner]}’s agent`,
-          "shared",
-          a.id,
+      yield {
+        actor: `${names[other(proposer)]}’s agent`,
+        label: i ? "Check the counteroffer" : "Check the equal-split offer",
+      };
+      for (const owner of [other(proposer), proposer]) {
+        const decision = new OwnerAgent(this.state, owner, this.now()).evaluate(
+          offer,
+          owner === "alice" ? alice : bob,
         );
+        if (!decision.accepted) {
+          this.emit(
+            "agent_rejected",
+            "Rejects: private constraints",
+            "The proposed terms failed this agent's private policy checks. Limits are withheld.",
+            `${names[owner]}’s agent`,
+            "shared",
+            a.id,
+          );
+          yield {
+            actor: i ? "Concord" : "Alice’s agent",
+            label: i
+              ? "Finish bounded negotiation"
+              : "Prepare usage-based counteroffer",
+          };
+          break;
+        }
+        if (owner !== proposer) {
+          this.emit(
+            "agent_accepted",
+            "Accepts the proposed terms",
+            "This agent's private policy checks passed; owner consent has not been granted.",
+            `${names[owner]}’s agent`,
+            "shared",
+            a.id,
+          );
+          yield {
+            actor: `${names[proposer]}’s agent`,
+            label: "Validate terms and reach policy consensus",
+          };
+        }
       }
       const result = this.validate(a, offer);
       if (!result.ok) {
@@ -1282,6 +1374,8 @@ export class Engine {
     }
   }
   withdraw(owner: Owner) {
+    const agreement = this.current(owner);
+    if (agreement) this.execution.cancel(agreement.id);
     const req = this.active(owner);
     if (!req) return;
     req.status = "withdrawn";
@@ -1369,6 +1463,7 @@ export class Engine {
           p.expiresAt <= this.at())
       ) {
         a.status = "expired";
+        this.execution.cancel(a.id);
         if (p) {
           p.status = "expired";
           p.approvals = {};
@@ -1421,6 +1516,11 @@ export class Engine {
       );
     return structuredClone({
       owner,
+      execution: {
+        mode: this.execution.mode,
+        streamed: this.execution.enabled,
+        run: this.execution.run(agreement?.id),
+      },
       name: names[owner],
       limits: this.state.owners[owner].limits,
       workloadEvidence: this.state.owners[owner].workloadEvidence,

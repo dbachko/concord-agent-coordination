@@ -17,7 +17,13 @@ export function createApp(
   const store = options.store ?? new Store(),
     engine = options.engine ?? new Engine(store.load()),
     integrations = options.integrations ?? new Integrations();
+  engine.execution.enabled = true;
   const app = express();
+  const streamClients = new Set<() => void>();
+  const streamClosers = new Set<() => void>();
+  const saveExecution = engine.subscribe((event) => {
+    if (!event) store.save(engine.state);
+  });
   const tokens = {
     alice: randomBytes(32).toString("hex"),
     bob: randomBytes(32).toString("hex"),
@@ -94,6 +100,115 @@ export function createApp(
     const view = engine.view(ownerFor(req));
     store.save(engine.state);
     res.json({ ...view, integrations: integrations.status() });
+  });
+  app.get("/api/events", (req, res) => {
+    const owner = ownerFor(req);
+    const cursor = z
+      .string()
+      .max(100)
+      .optional()
+      .parse(req.headers["last-event-id"]);
+    res.set({
+      "Content-Type": "text/event-stream",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    res.flushHeaders();
+    let closed = false,
+      queued = false;
+    const write = (type: string, value: unknown, id?: string) => {
+      if (closed || res.destroyed) return;
+      if (res.writableLength > 65536) return res.end();
+      res.write(
+        `${id ? `id: ${id}\n` : ""}event: ${type}\ndata: ${JSON.stringify(value)}\n\n`,
+      );
+    };
+    const snapshot = () => {
+      if (queued || closed) return;
+      queued = true;
+      queueMicrotask(() => {
+        queued = false;
+        if (!closed)
+          write("snapshot", {
+            view: {
+              ...engine.view(owner),
+              integrations: integrations.status(),
+            },
+          });
+      });
+    };
+    const initial = engine.view(owner);
+    const cursorIndex = initial.events.findIndex(
+      (event) => event.id === cursor,
+    );
+    if (cursor && cursorIndex >= 0) {
+      for (const event of initial.events.slice(cursorIndex + 1))
+        write("activity", { event }, event.id);
+    }
+    write("snapshot", {
+      view: { ...initial, integrations: integrations.status() },
+      cursorReset: Boolean(cursor && cursorIndex < 0),
+    });
+    const unsubscribe = engine.subscribe((event) => {
+      if (
+        event &&
+        (event.scope === owner ||
+          (event.scope === "shared" &&
+            (!event.agreementId ||
+              event.agreementId === engine.current(owner)?.id)))
+      ) {
+        write("activity", { event }, event.id);
+      }
+      snapshot();
+    });
+    const heartbeat = setInterval(() => {
+      if (!closed) res.write(": heartbeat\n\n");
+    }, 15000);
+    heartbeat.unref();
+    const end = () => res.end();
+    streamClients.add(snapshot);
+    streamClosers.add(end);
+    res.on("close", () => {
+      closed = true;
+      clearInterval(heartbeat);
+      unsubscribe();
+      streamClients.delete(snapshot);
+      streamClosers.delete(end);
+    });
+  });
+  app.post("/api/negotiation/mode", (req, res) => {
+    const owner = ownerFor(req);
+    const { mode } = z
+      .object({ mode: z.enum(["automatic", "step"]) })
+      .strict()
+      .parse(req.body);
+    engine.execution.setMode(mode);
+    res.json(engine.view(owner));
+  });
+  app.post("/api/negotiation/step", (req, res) => {
+    const owner = ownerFor(req);
+    const input = z
+      .object({ runId: z.uuid(), expectedStep: z.number().int().nonnegative() })
+      .strict()
+      .parse(req.body);
+    engine.sweep();
+    const agreement = engine.current(owner),
+      run = engine.execution.run(agreement?.id);
+    if (
+      !agreement ||
+      !run ||
+      run.id !== input.runId ||
+      run.steps !== input.expectedStep ||
+      run.status !== "paused" ||
+      !engine.execution.step(agreement.id)
+    )
+      throw new DomainError(
+        409,
+        "STALE_EXECUTION",
+        "This execution step changed or already ran. Refresh before advancing.",
+      );
+    store.save(engine.state);
+    res.json(engine.view(owner));
   });
   app.post("/api/assistant/command", async (req, res) => {
     const owner = ownerFor(req),
@@ -219,6 +334,13 @@ export function createApp(
               owner,
             );
         });
+        await engine.execution.idle();
+        if (epoch !== generation)
+          throw new DomainError(
+            409,
+            "DEMO_RESET",
+            "The demo reset during policy execution. No old plan was confirmed.",
+          );
       } finally {
         store.save(engine.state);
       }
@@ -261,10 +383,11 @@ export function createApp(
     store.save(engine.state);
     res.json(research);
   });
-  app.post("/api/provider/select", (req, res) => {
+  app.post("/api/provider/select", async (req, res) => {
     const owner = ownerFor(req),
       input = ProviderSelectionSchema.parse(req.body);
     engine.selectProvider(input.sourceUrl, input.planningTotalCents);
+    await engine.execution.idle();
     store.save(engine.state);
     res.json(engine.view(owner));
   });
@@ -300,6 +423,7 @@ export function createApp(
         manifest: engine.state.owners[owner].workloadEvidence?.manifest,
       });
     engine.refreshWorkload(owner, workloadEvidence);
+    await engine.execution.idle();
     engine.emit(
       "workloadEvidence_refreshed",
       "Selected workload manifest rechecked",
@@ -320,7 +444,9 @@ export function createApp(
         "Demo reset requires the local harness capability.",
       );
     generation++;
+    engine.execution.cancelAll();
     engine.state = freshState();
+    for (const publish of streamClients) publish();
     store.save(engine.state);
     res.json({ ok: true });
   });
@@ -420,10 +546,17 @@ export function createApp(
     }
   }, 60000);
   workloadTimer.unref();
+  for (const agreement of engine.state.agreements.filter(
+    (a) => a.status === "negotiating",
+  ))
+    engine.negotiate(agreement);
   return {
     app,
     engine,
     close: () => {
+      engine.execution.cancelAll();
+      saveExecution();
+      for (const end of streamClosers) end();
       clearInterval(timer);
       clearInterval(workloadTimer);
     },

@@ -47,6 +47,7 @@ import {
   type Session,
   type View,
 } from "./api";
+import { mergeEvents, readEvents } from "./event-stream";
 import type { NeedInput, Owner, Proposal } from "../server/types";
 
 const statusText: Record<string, string> = {
@@ -62,6 +63,7 @@ const statusText: Record<string, string> = {
 function useOwner(session?: Session) {
   const [view, setView] = useState<View>();
   const [error, setError] = useState("");
+  const [streamState, setStreamState] = useState("connecting");
   const refresh = useCallback(async () => {
     if (!session) return;
     try {
@@ -73,11 +75,60 @@ function useOwner(session?: Session) {
     }
   }, [session]);
   useEffect(() => {
+    if (!session) return;
+    const controller = new AbortController();
+    let timer: number | undefined, cursor: string | undefined;
+    const connect = async () => {
+      let retry = true;
+      try {
+        const response = await fetch("/api/events", {
+          headers: {
+            Authorization: `Bearer ${session.token}`,
+            ...(cursor ? { "Last-Event-ID": cursor } : {}),
+          },
+          signal: controller.signal,
+        });
+        if (response.status === 401) {
+          retry = false;
+          setStreamState("reload required");
+          return;
+        }
+        if (!response.ok) throw new Error("Event stream unavailable");
+        setStreamState("connected");
+        await readEvents(response, (frame) => {
+          const data = JSON.parse(frame.data);
+          if (frame.type === "snapshot") {
+            setView(data.view);
+            setError("");
+            cursor = data.view.events.at(-1)?.id;
+          } else if (frame.type === "activity") {
+            cursor = frame.id ?? cursor;
+            setView(
+              (current) =>
+                current && {
+                  ...current,
+                  events: mergeEvents(current.events, [data.event]),
+                },
+            );
+          }
+        });
+      } catch {
+        if (!controller.signal.aborted) setStreamState("reconnecting");
+      } finally {
+        if (retry && !controller.signal.aborted) {
+          setStreamState("reconnecting");
+          timer = window.setTimeout(() => void connect(), 1000);
+        }
+      }
+    };
     void refresh();
-    const id = window.setInterval(() => void refresh(), 1500);
-    return () => clearInterval(id);
-  }, [refresh]);
-  return { view, error, refresh };
+    void connect();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [session, refresh]);
+  return { view, error, refresh, streamState };
 }
 
 function OpportunityCard({
@@ -988,11 +1039,28 @@ function Approval({ owner, proposal }: { owner: Owner; proposal: Proposal }) {
   );
 }
 
-function AgentNegotiation({ view }: { view: View }) {
-  const agreement = view.agreement;
-  if (!agreement) return null;
+function AgentNegotiation({
+  view,
+  session,
+  refresh,
+  streamState,
+}: {
+  view: View;
+  session: Session;
+  refresh: () => Promise<void>;
+  streamState: string;
+}) {
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const execution = view.execution ?? {
+    mode: "automatic",
+    streamed: false,
+    run: undefined,
+  };
+  const agreement = view.agreement,
+    run = execution.run;
   const all = view.events
-    .filter((event) => event.agreementId === agreement.id)
+    .filter((event) => event.agreementId === agreement?.id)
     .sort((a, b) => a.sequence - b.sequence);
   const start = all.findLastIndex(
     (event) => event.type === "agent_negotiation_started",
@@ -1004,22 +1072,86 @@ function AgentNegotiation({ view }: { view: View }) {
         "agent_offer",
         "agent_rejected",
         "agent_counteroffer",
+        "agent_accepted",
         "agent_consensus",
+        "agent_run_failed",
       ].includes(event.type),
     );
-  if (!steps.length) return null;
+  async function control(action: "mode" | "step") {
+    setBusy(true);
+    setError("");
+    try {
+      await api(
+        `/api/negotiation/${action}`,
+        session.token,
+        action === "mode"
+          ? { mode: execution.mode === "step" ? "automatic" : "step" }
+          : { runId: run!.id, expectedStep: run!.steps },
+      );
+      await refresh();
+    } catch (error) {
+      setError((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <section className="agent-negotiation" aria-label="Agent negotiation">
       <div className="agent-negotiation-heading">
         <h3>Agent negotiation</h3>
-        <span>Policy agents</span>
+        <span>
+          {streamState === "connected" ? "Event stream connected" : streamState}
+        </span>
       </div>
-      <ol>
+      <div className="execution-controls">
+        <span>Local policy agents · sample prices</span>
+        <button
+          className="text-button"
+          aria-pressed={execution.mode === "step"}
+          disabled={busy}
+          onClick={() => void control("mode")}
+        >
+          {execution.mode === "step"
+            ? "Use automatic mode"
+            : "Inspect step by step"}
+        </button>
+      </div>
+      {run && (run.status === "paused" || run.status === "running") ? (
+        <div className="execution-current" role="status">
+          <div>
+            <strong>{run.next?.actor}</strong>
+            <p>
+              {run.status === "paused" ? "Paused before: " : "Running: "}
+              {run.next?.label}
+            </p>
+          </div>
+          {run.status === "paused" && (
+            <button
+              className="button secondary compact"
+              disabled={busy}
+              onClick={() => void control("step")}
+            >
+              Run next step
+            </button>
+          )}
+        </div>
+      ) : (
+        <p className="execution-note">
+          {run
+            ? `${run.status} · ${run.elapsedMs} ms wall time`
+            : steps.length
+              ? "Recorded events. New decisions stream as executed."
+              : "Automatic runs finish quickly. Step mode pauses before each real operation."}
+        </p>
+      )}
+      <ol aria-label="Executed policy events">
         {steps.map((event) => (
           <li key={event.id} className={event.type}>
-            {event.type === "agent_rejected" ? (
+            {event.type === "agent_rejected" ||
+            event.type === "agent_run_failed" ? (
               <XCircle size={15} />
-            ) : event.type === "agent_consensus" ? (
+            ) : event.type === "agent_consensus" ||
+              event.type === "agent_accepted" ? (
               <CheckCheck size={15} />
             ) : (
               <ArrowRight size={15} />
@@ -1033,10 +1165,23 @@ function AgentNegotiation({ view }: { view: View }) {
                   ? "Policy checks passed · owners decide next"
                   : event.title}
               </p>
+              <time dateTime={event.at}>
+                {new Date(event.at).toLocaleTimeString("en-US", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                  fractionalSecondDigits: 3,
+                })}
+              </time>
             </div>
           </li>
         ))}
       </ol>
+      {error && (
+        <p className="inline-error" role="alert">
+          {error}
+        </p>
+      )}
     </section>
   );
 }
@@ -1045,8 +1190,14 @@ function SharedPlan({
   view,
   activeCount,
   onExpire,
+  session,
+  refresh,
+  streamState,
 }: {
   view: View;
+  session: Session;
+  refresh: () => Promise<void>;
+  streamState: string;
   activeCount: number;
   onExpire: () => void;
 }) {
@@ -1070,6 +1221,12 @@ function SharedPlan({
         <h2 id="shared-plan-title">Shared plan</h2>
         {p && <span className="proposal-version">v{p.version}</span>}
       </div>
+      <AgentNegotiation
+        view={view}
+        session={session}
+        refresh={refresh}
+        streamState={streamState}
+      />
       {!a ? (
         <div className="empty-plan">
           <Cpu size={32} />
@@ -1094,11 +1251,12 @@ function SharedPlan({
               {statusText[a.status]}
             </span>
           </div>
-          <AgentNegotiation view={view} />
           {!valid ? (
-            <div className="inactive-plan">
-              <p>{a.reason ?? "This proposal is no longer active."}</p>
-            </div>
+            a.status === "negotiating" ? null : (
+              <div className="inactive-plan">
+                <p>{a.reason ?? "This proposal is no longer active."}</p>
+              </div>
+            )
           ) : (
             <div className="agreement-sheet" key={p.version}>
               <div className="plan-resource">
@@ -1556,6 +1714,11 @@ export default function App() {
               />
               <SharedPlan
                 view={view!}
+                session={sessions[activeOwner === "alice" ? 0 : 1]}
+                refresh={refreshBoth}
+                streamState={
+                  activeOwner === "alice" ? alice.streamState : bob.streamState
+                }
                 activeCount={activeCount}
                 onExpire={() => void expire()}
               />

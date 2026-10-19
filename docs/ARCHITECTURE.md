@@ -23,3 +23,11 @@ Parallel supplies research evidence; Composio supplies selected external context
 The backend uses deterministic private policy agents, not a language model. The assistant relay is CLI → local HTTP; it is not a native installed connector. Atomic JSON snapshots live in ignored `.data/`. The server binds to loopback and rejects foreign origins, hosts and private-file paths.
 
 Local synthetic-owner capabilities are a test harness. Production needs authenticated identities, encrypted storage, tenant isolation, concurrency control and verified provider policies. No booking, payment, deployment or messaging executor is implemented. Default integrations use labeled fixtures; failed live calls never silently fall back.
+
+## Incremental execution
+
+`server/execution.ts` advances a generator through actual proposal, private evaluation, rejection, counteroffer and consensus operations. Automatic mode yields to the event loop between operations without artificial delays. Explicit step mode pauses before the next operation; stale step IDs and repeated step numbers cannot execute twice. Expiry, withdrawal, changed constraints and reset stop obsolete runs. Private evidence is checked against the current clock when each operation executes.
+
+`GET /api/events` uses a Bearer capability header and SSE. Each connection receives only its owner's permitted activity and snapshots. `Last-Event-ID` recovers missed events from the bounded visible history; an obsolete cursor triggers snapshot resynchronization. React appends activity by UUID and reconciles snapshots, aborts connections on cleanup, and reconnects after a real disconnect. Tokens never go in query strings.
+
+`POST /api/negotiation/mode` accepts `{mode:"automatic"|"step"}`. `POST /api/negotiation/step` accepts the current `{runId,expectedStep}`. Both require an owner capability. Execution mode is a shared local harness control for the synthetic participants, not production tenant administration. The relay's ordinary command API still returns the completed result in automatic mode; step mode returns the genuinely paused run.

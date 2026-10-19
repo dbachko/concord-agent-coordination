@@ -69,6 +69,12 @@ npm run smoke
 
 The smoke test resets only port `4318`; it must not target an active owner session.
 
+## Watch negotiation execute
+
+The console receives authenticated server-sent events as local policy operations execute. Automatic mode runs without added delays, so it may finish almost instantly. Choose **Inspect step by step** before submitting the two selected needs, then **Run next step** to execute each pending operation. This pauses computation; it does not replay a finished transcript. Timestamps and current agent/step are shown. Owner review becomes available only after policy consensus.
+
+Agents are deterministic policy functions, not LLMs. Sample provider prices remain labeled separately.
+
 ## Integrate a personal assistant
 
 An assistant sends structured selected needs and explicit owner responses through the local CLI/HTTP relay:

@@ -2,6 +2,12 @@
 
 Main: http://127.0.0.1:4317. Isolated tests: port 4318. Both currently use mock integrations, simulated provider data and real local logic. No live API success is claimed.
 
+## Live local execution
+
+Choose **Inspect step by step**, submit Alice and Bob with **Find a match**, then press **Run next step**. The first click computes Bob's equal-split offer; the next executes Alice's private check and rejection; the next computes her usage-based counteroffer; subsequent clicks execute acceptance and consensus. Owner exploration and final approval remain separate. **Use automatic mode** runs the remaining operations immediately without fake timing. New events arrive over the authenticated stream; existing history retains its original timestamps.
+
+Only local policy execution is live here. Provider prices and workloads are explicitly synthetic; this is not an LLM conversation or proof of external API success.
+
 ## Walkthrough
 
 1. Alice opts into a watch for a selected public-demo workload: one whole GPU, 24 GB VRAM, 60 minutes, US West, Saturday 9am–5pm Pacific, synthetic private $5 limit. No active Alice request exists.

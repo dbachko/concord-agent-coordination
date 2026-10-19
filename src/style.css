@@ -2627,6 +2627,7 @@ nav {
 }
 .workspace.single-owner > .assistant {
   order: 1;
+  grid-area: auto;
 }
 .owner-switch {
   margin: 24px 0 20px;
@@ -3030,4 +3031,47 @@ nav {
 }
 .agent-negotiation .agent_consensus > svg {
   color: #456944;
+}
+
+.execution-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.execution-controls button {
+  font-size: 11px;
+}
+.execution-current {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: #edf0e7;
+  padding: 12px;
+  border-radius: 12px;
+  margin: 12px 0;
+}
+.execution-current strong {
+  color: var(--ink);
+}
+.execution-current .button {
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+.execution-note {
+  font-size: 11px !important;
+  color: var(--muted) !important;
+  line-height: 1.5 !important;
+  margin: 10px 0 !important;
+}
+.agent-negotiation time {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
 }
