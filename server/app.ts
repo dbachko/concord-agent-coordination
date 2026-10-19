@@ -162,7 +162,10 @@ export function createApp(
       snapshot();
     });
     const heartbeat = setInterval(() => {
-      if (!closed) res.write(": heartbeat\n\n");
+      if (!closed) {
+        res.write(": heartbeat\n\n");
+        snapshot(); // Keep displayed expiry time fresh while execution is idle.
+      }
     }, 15000);
     heartbeat.unref();
     const end = () => res.end();
