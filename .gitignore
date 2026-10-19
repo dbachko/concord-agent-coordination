@@ -1,0 +1,20 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+.data/
+playwright-report/
+test-results/
+*.log
+.playwright-cli/
+output/
+coverage/
+.cache/
+.DS_Store
+*.tmp
+*.pem
+*.key
+# Local product/design notes and account setup evidence are not distributable.
+PRODUCT.md
+DESIGN.md
